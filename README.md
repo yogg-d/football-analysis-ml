@@ -6,7 +6,7 @@ Python is used for extraction, processing, analysis and visualisation of event d
 
 ## Workflow
 data_directory: Storage of raw football data used for projects.
-analysis_tools: Custom python package containing modules that support football data import, processing, manipulation and visualisation.
+tools: Custom python package containing modules that support football data import, processing, manipulation and visualisation.
 projects: Series of projects that cover various elements of football data analytics. Also contains any template scripts used to import raw data from various football data APIs, websites or data services.
 
 ## Projects
