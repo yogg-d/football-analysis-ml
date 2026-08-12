@@ -17,7 +17,7 @@ projects: Series of projects that cover various elements of football data analyt
 
 Data Source: Wyscout
 
-Project Area: model_directory & 03_model_development_and_implementation
+Project Area: model & model_development_and_implementation
 
 Code: xg_log_regression_model.py, xg_neural_network.py & shot_xg_plot.py
 
@@ -27,7 +27,7 @@ Summary and Output: Implementation and testing of basic expected goals probabili
 
 Data Source: Opta
 
-Project Area: model_directory, 03_model_development_and_implementation & External Repo: ml_models_collection
+Project Area: model, model_development_and_implementation & External Repo: ml_models_collection
 
 Code: pass_cluster_data_collection.py, models.py, External Repo: ml_model.ipynb
 
@@ -37,7 +37,7 @@ Summary and Output: Using 5,000,000+ passes withn Europe's "Big 5" leagues (Opta
 
 Data Source: Statsbomb
 
-Project Area: analysis_tools
+Project Area: tools
 
 Code: models.py
 
