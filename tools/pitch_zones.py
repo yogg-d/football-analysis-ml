@@ -34,7 +34,6 @@ def identify_zone(single_event,  zone_type='jdp_custom', get_centers=False, sour
         else:
             x_endpos = np.nan
             y_endpos = np.nan
-
     
     else:
         pitch_dims = (100, 100)
