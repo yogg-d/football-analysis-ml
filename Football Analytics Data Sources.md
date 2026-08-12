@@ -1,4 +1,4 @@
-#Understand Football Data Sources
+# Understand Football Data Sources
 
 Before going at it alone, it's important to understand what football data exists in the public domain, and equally what doesn't? What do you have to pay for, and what's available for free? 
 
