@@ -1,4 +1,4 @@
-# expected-goals-thesis
+# Expected Goals Modelling
 A repository for analysis on Expected Goals using Hudl StatsBomb and Wyscout data.
 
 # StatsBomb data
