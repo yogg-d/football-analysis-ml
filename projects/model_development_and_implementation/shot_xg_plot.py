@@ -93,20 +93,25 @@ ax['pitch'].scatter(PITCH_WIDTH_Y/2 + selected_headed_goals['c_yards'], PITCH_LE
 
 ax['pitch'].set_ylim([59.9,125])
 
+if selected_shots.empty:
+    raise ValueError(f"No shots found for {player_team_or_comp!r}. Check the name spelling.")
+
 # Plot highest xG miss and lowest xG goal chance
-if lowest_xg_goal['header_tag'].values==1:
+if not lowest_xg_goal.empty and lowest_xg_goal['header_tag'].values[0] == 1:
     lowxg_marker = 'o'
 else:
     lowxg_marker = 'h'
-if highest_xg_miss['header_tag'].values==1:
+if not highest_xg_miss.empty and highest_xg_miss['header_tag'].values[0]==1:
     highxg_marker = 'o'
 else:
     highxg_marker = 'h'    
     
-ax['pitch'].scatter(PITCH_WIDTH_Y/2 + highest_xg_miss['c_yards'], PITCH_LENGTH_X - highest_xg_miss['x_yards'], 
-                    marker=highxg_marker, s=200, c='r', edgecolors='grey', lw = 2.5 ,vmin=-0.04,vmax=0.4,cmap=plt.cm.inferno, zorder=3)
-ax['pitch'].scatter(PITCH_WIDTH_Y/2 + lowest_xg_goal['c_yards'], PITCH_LENGTH_X - lowest_xg_goal['x_yards'], 
-                    marker=lowxg_marker, s=200, c='g', edgecolors='w', lw = 2.5 ,vmin=-0.04,vmax=0.4,cmap=plt.cm.inferno, zorder=3)
+if not highest_xg_miss.empty:
+    ax['pitch'].scatter(PITCH_WIDTH_Y/2 + highest_xg_miss['c_yards'], PITCH_LENGTH_X - highest_xg_miss['x_yards'], 
+                        marker=highxg_marker, s=200, c='r', edgecolors='grey', lw = 2.5 ,vmin=-0.04,vmax=0.4,cmap=plt.cm.inferno, zorder=3)
+if not lowest_xg_goal.empty:
+    ax['pitch'].scatter(PITCH_WIDTH_Y/2 + lowest_xg_goal['c_yards'], PITCH_LENGTH_X - lowest_xg_goal['x_yards'], 
+                        marker=lowxg_marker, s=200, c='g', edgecolors='w', lw = 2.5 ,vmin=-0.04,vmax=0.4,cmap=plt.cm.inferno, zorder=3)
 
 
 # Add colorbar
@@ -147,28 +152,33 @@ fig.text(0.18,0.852, subsubtitle_text, fontweight="regular", fontsize=10, color=
     
 
 # Stats
-if selected_shots['goal'].sum()-selected_shots.sum()['xG'] > 0:
-    sign = '+'
-else:
-    sign=''
-    
+n_shots = len(selected_shots)
+total_xg = float(selected_shots['xG'].sum())
+total_goals = int(selected_shots['goal'].sum())
+sign = '+' if total_goals - total_xg > 0 else ''
+xg_perf = f"{sign}{int(round(100 * (total_goals - total_xg) / total_xg, 0))}%" if total_xg else "n/a"
+xg_per_shot = f"{round(total_xg / n_shots, 2)}" if n_shots else "n/a"
+goal_per_shot = f"{round(total_goals / n_shots, 2)}" if n_shots else "n/a"
+low_xg_txt = f"{round(lowest_xg_goal['xG'].values[0], 2)}" if not lowest_xg_goal.empty else "n/a"
+high_xg_txt = f"{round(highest_xg_miss['xG'].values[0], 2)}" if not highest_xg_miss.empty else "n/a"
+
 fig.text(0.65,0.925, "Shots:", fontweight="bold", fontsize=10, color='w')
 fig.text(0.65,0.9, "xG:", fontweight="bold", fontsize=10, color='w')
 fig.text(0.65,0.875, "Goals:", fontweight="bold", fontsize=10, color='w')
 fig.text(0.65,0.85, "xG Perf:", fontweight="bold", fontsize=10, color='w')
-fig.text(0.73,0.925, f"{int(selected_shots.count()[0])}", fontweight="regular", fontsize=10, color='w')
-fig.text(0.73,0.9, f"{round(selected_shots.sum()['xG'],1)}", fontweight="regular", fontsize=10, color='w')
-fig.text(0.73,0.875, f"{int(selected_shots['goal'].sum())}", fontweight="regular", fontsize=10, color='w')
-fig.text(0.73,0.85, f"{sign}{int(round(100*(selected_shots['goal'].sum()-selected_shots.sum()['xG'])/selected_shots.sum()['xG'],0))}%", fontweight="regular", fontsize=10, color='w')
+fig.text(0.73,0.925, f"{n_shots}", fontweight="regular", fontsize=10, color='w')
+fig.text(0.73,0.9, f"{round(total_xg, 1)}", fontweight="regular", fontsize=10, color='w')
+fig.text(0.73,0.875, f"{total_goals}", fontweight="regular", fontsize=10, color='w')
+fig.text(0.73,0.85, xg_perf, fontweight="regular", fontsize=10, color='w')
 
 fig.text(0.79,0.927, "xG/shot:", fontweight="bold", fontsize=10, color='w')
 fig.text(0.79,0.9, "Goal/shot:", fontweight="bold", fontsize=10, color='w')
 fig.text(0.79,0.875, "L xG Goal:", fontweight="bold", fontsize=10, color='w')
 fig.text(0.79,0.85, "H xG Miss:", fontweight="bold", fontsize=10, color='w')
-fig.text(0.89,0.925, f"{round(selected_shots.sum()['xG']/selected_shots.count()[0],2)}", fontweight="regular", fontsize=10, color='w')
-fig.text(0.89,0.9, f"{round(selected_shots['goal'].sum()/selected_shots.count()[0],2)}", fontweight="regular", fontsize=10, color='w')
-fig.text(0.89,0.875, f"{round(lowest_xg_goal['xG'].values[0],2)}", fontweight="regular", fontsize=10, color='w')
-fig.text(0.89,0.85, f"{round(highest_xg_miss['xG'].values[0],2)}", fontweight="regular", fontsize=10, color='w')
+fig.text(0.89,0.925, xg_per_shot, fontweight="regular", fontsize=10, color='w')
+fig.text(0.89,0.9, goal_per_shot, fontweight="regular", fontsize=10, color='w')
+fig.text(0.89,0.875, low_xg_txt, fontweight="regular", fontsize=10, color='w')
+fig.text(0.89,0.85, high_xg_txt, fontweight="regular", fontsize=10, color='w')
 
 
 # Footer text
@@ -178,6 +188,10 @@ fig.text(0.5, 0.02, "Created by Jake Kolliari. Data provided by Wyscout.com",
 # Add WC Logo
 ax = fig.add_axes([0.02,0.8,0.2,0.2])
 ax.axis("off")
-response = requests.get(logo)
-img = Image.open(BytesIO(response.content))
-ax.imshow(img)
+try:
+    response = requests.get(logo, timeout=15)
+    response.raise_for_status()
+    img = Image.open(BytesIO(response.content))
+    ax.imshow(img)
+except Exception:
+    ax.text(0.5, 0.5, "logo unavailable", ha="center", va="center", color="white", fontsize=8)

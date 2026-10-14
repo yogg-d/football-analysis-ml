@@ -11,7 +11,7 @@ import numpy as np
 root_folder = os.path.abspath(os.path.dirname((os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(root_folder)
 
-import analysis_tools.get_football_data as gfd
+from tools import get_football_data as gfd
 
 # %% User inputs
 

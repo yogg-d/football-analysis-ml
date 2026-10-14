@@ -7,6 +7,7 @@ import numpy as np
 import os
 import bz2
 import pickle
+from pathlib import Path
 
 # %% Select data to load
 
@@ -71,6 +72,7 @@ for idx in np.arange(0,num_files):
     print(f"Isolating sample {idx}")
     pass_sample_df = passes_df_out.iloc[sample_size*idx:sample_size*(idx+1)]
     print(f"Saving sample {idx}")
-    with bz2.BZ2File(f"pass_data_{idx}.pbz2", "wb") as f:
+    Path('../../data_directory/pass_cluster_data').mkdir(parents=True, exist_ok=True)
+    with bz2.BZ2File(f"../../data_directory/pass_cluster_data/pass_data_{idx}.pbz2", "wb") as f:
         pickle.dump(pass_sample_df, f)
     print("Save complete")

@@ -2,7 +2,11 @@
 
 # %% Imports
 
-import ScraperFC as sfc
+try:
+    import ScraperFC as sfc  # legacy name; deprecated upstream
+except ImportError:  # pragma: no cover - prefer maintained fork
+    import soccerdata as sfc
+import os
 import traceback
 import pandas as pd
 
@@ -29,6 +33,7 @@ STORAGE_MODE = 'all'
 # Replace with path of directory to store data (path is relative to directory of this script). SAVE_COMP is not needed
 SAVE_COMP = 'EPL'
 DIRECTORY = f"../../data_directory/fbref_data/{str(COMPETITION_END_YEAR-1)}_{str(COMPETITION_END_YEAR).replace('20','',1)}/{SAVE_COMP}/"
+os.makedirs(DIRECTORY, exist_ok=True)
 
 # %% Scrape data
 

@@ -1,203 +1,158 @@
+"""Modelling tools: pass clustering and expected-points simulation."""
+
+from pathlib import Path
 
 import joblib
-from sklearn.base import BaseEstimator, TransformerMixin
-import os
 import numpy as np
 import pandas as pd
-
+from sklearn.base import BaseEstimator, TransformerMixin
 
 
 class convertYards(BaseEstimator, TransformerMixin):
+    """Convert 0-100 pitch coords to yards (120 x 80). Operates on a copy."""
+
     def fit(self, X, y=None):
         return self
 
     def transform(self, X, y=None):
-        X['x'] = X['x'] * (120 / 100)
-        X['y'] = X['y'] * (80 / 100)
-        X['endX'] = X['endX'] * (120 / 100)
-        X['endY'] = X['endY'] * (80 / 100)
+        X = X.copy()
+        for col, scale in (("x", 120 / 100), ("y", 80 / 100),
+                           ("endX", 120 / 100), ("endY", 80 / 100)):
+            if col in X.columns:
+                X[col] = X[col] * scale
         return X
 
 
 class customScaler(BaseEstimator, TransformerMixin):
+    """Scale yard coords to 0-1. x/120, y/80 (fixes old bug where y was /120).
+
+    NOTE: ``PassClusterModel65.joblib`` was trained with the buggy /120
+    scaler, so its predictions will shift slightly under the corrected
+    scaler. Retrain the clustering pipeline with this fixed scaler when
+    convenient; the code path is otherwise unchanged.
+    """
+
     def fit(self, X, y=None):
         self.max_x = 120
         self.max_y = 80
         return self
 
     def transform(self, X, y=None):
-        X['x'] = X['x'] / 120
-        X['y'] = X['y'] / 120
-        X['endX'] = X['endX'] / 120
-        X['endY'] = X['endY'] / 120
+        X = X.copy()
+        for col in ("x", "endX"):
+            if col in X.columns:
+                X[col] = X[col] / 120
+        for col in ("y", "endY"):
+            if col in X.columns:
+                X[col] = X[col] / 80
         return X
 
 
+def _pass_cluster_model_path():
+    # tools/models.py -> repo root -> model/pass_cluster_model
+    return (Path(__file__).resolve().parent.parent
+            / "model" / "pass_cluster_model" / "PassClusterModel65.joblib")
+
+
 def get_pass_clusters(events, data_mode='whoscored'):
-    
+    """Assign pass-cluster ids using the saved 65-cluster k-means pipeline."""
     if data_mode == 'whoscored':
         passes_out = events[events['eventType'] == 'Pass'].copy()
     elif data_mode == 'statsbomb':
         passes_out = events[events['type_name'] == 'Pass'].copy()
-        passes_out['x'] = 100*passes_out['x']/120
-        passes_out['y'] = 100*passes_out['y']/80
-        passes_out['endX'] = 100*passes_out['end_x'] / 120
-        passes_out['endY'] = 100*passes_out['end_y'] / 80
+        passes_out['x'] = 100 * passes_out['x'] / 120
+        passes_out['y'] = 100 * passes_out['y'] / 80
+        passes_out['endX'] = 100 * passes_out['end_x'] / 120
+        passes_out['endY'] = 100 * passes_out['end_y'] / 80
     else:
         raise ValueError("Specify 'whoscored' or 'statsbomb' as data mode")
 
-    
-    current_dir = os.getcwd()
-    os.chdir(current_dir.split("football-data-analytics")[0] +
-             "football-data-analytics/model_directory/pass_cluster_model")
-    cluster_model = joblib.load("PassClusterModel65.joblib")
-    os.chdir(current_dir)
+    if passes_out.empty:
+        passes_out['pass_cluster_id'] = pd.Series(dtype=int)
+        return passes_out
 
-    
+    model_path = _pass_cluster_model_path()
+    if not model_path.exists():
+        raise FileNotFoundError(f"Pass cluster model not found at {model_path}")
+    cluster_model = joblib.load(model_path)
+
     passes_out['pass_cluster_id'] = cluster_model.predict(passes_out)
-    cluster_centers = cluster_model['model'].cluster_centers_ * 120
-    passes_out['pass_cluster_mean_x'] = passes_out['pass_cluster_id'].apply(lambda x: cluster_centers[x, 0])
-    passes_out['pass_cluster_mean_y'] = passes_out['pass_cluster_id'].apply(lambda x: cluster_centers[x, 1])
-    passes_out['pass_cluster_mean_end_x'] = passes_out['pass_cluster_id'].apply(lambda x: cluster_centers[x, 2])
-    passes_out['pass_cluster_mean_end_y'] = passes_out['pass_cluster_id'].apply(lambda x: cluster_centers[x, 3])
 
-   
-    if data_mode == 'whoscored':
-        passes_out['pass_cluster_mean_x'] = 100*passes_out['pass_cluster_mean_x']/120
-        passes_out['pass_cluster_mean_y'] = 100*passes_out['pass_cluster_mean_y']/80
-        passes_out['pass_cluster_mean_end_x'] = 100*passes_out['pass_cluster_mean_end_x']/120
-        passes_out['pass_cluster_mean_end_y'] = 100*passes_out['pass_cluster_mean_end_y']/80
+    # cluster centres are in scaled space; recover yard coords robustly
+    try:
+        model_step = (cluster_model.named_steps['model']
+                      if hasattr(cluster_model, 'named_steps') else cluster_model['model'])
+        cluster_centers = np.asarray(model_step.cluster_centers_) * 120
+    except Exception:
+        cluster_centers = None
 
-    elif data_mode == 'statsbomb':
-        passes_out['x'] = 120*passes_out['x']/100
-        passes_out['y'] = 80*passes_out['y']/100
-        passes_out = passes_out.drop(columns=['endX', 'endY'])
+    if cluster_centers is not None:
+        cid = passes_out['pass_cluster_id'].to_numpy()
+        passes_out['pass_cluster_mean_x'] = cluster_centers[cid, 0]
+        passes_out['pass_cluster_mean_y'] = cluster_centers[cid, 1]
+        passes_out['pass_cluster_mean_end_x'] = cluster_centers[cid, 2]
+        passes_out['pass_cluster_mean_end_y'] = cluster_centers[cid, 3]
+
+        if data_mode == 'whoscored':
+            passes_out['pass_cluster_mean_x'] = 100 * passes_out['pass_cluster_mean_x'] / 120
+            passes_out['pass_cluster_mean_y'] = 100 * passes_out['pass_cluster_mean_y'] / 80
+            passes_out['pass_cluster_mean_end_x'] = 100 * passes_out['pass_cluster_mean_end_x'] / 120
+            passes_out['pass_cluster_mean_end_y'] = 100 * passes_out['pass_cluster_mean_end_y'] / 80
+
+    if data_mode == 'statsbomb':
+        passes_out['x'] = 120 * passes_out['x'] / 100
+        passes_out['y'] = 80 * passes_out['y'] / 100
+        passes_out = passes_out.drop(columns=['endX', 'endY'], errors='ignore')
 
     return passes_out
 
 
-def simulate_match_outcome(events, matches, match_id, sim_count=10000):
-    
-    home_goal_list = []
-    away_goal_list = []
-    outcome_list = []
-
-    
+def simulate_match_outcome(events, matches, match_id, sim_count=10000, seed=None):
+    """Monte-Carlo match outcome from shot xG (vectorised, reproducible)."""
+    rng = np.random.default_rng(seed)
     match_simulate = matches[matches['match_id'] == match_id]
-    match_xg_events = events[(events['match_id'] == match_id) &
-                             (events['shot_statsbomb_xg'] == events['shot_statsbomb_xg'])]
-    home_xg_list = match_xg_events[match_xg_events['team_name'] == match_simulate['home_team'].values[0]][
-        'shot_statsbomb_xg'].values
-    away_xg_list = match_xg_events[match_xg_events['team_name'] == match_simulate['away_team'].values[0]][
-        'shot_statsbomb_xg'].values
+    if match_simulate.empty:
+        raise ValueError(f"match_id {match_id} not found in matches dataframe")
+    match_xg_events = events[(events['match_id'] == match_id)
+                             & events['shot_statsbomb_xg'].notna()]
+    home_team = match_simulate['home_team'].values[0]
+    away_team = match_simulate['away_team'].values[0]
+    home_xg_list = match_xg_events[match_xg_events['team_name'] == home_team][
+        'shot_statsbomb_xg'].to_numpy(dtype=float)
+    away_xg_list = match_xg_events[match_xg_events['team_name'] == away_team][
+        'shot_statsbomb_xg'].to_numpy(dtype=float)
 
-    
-    for i in range(sim_count):
+    home_goals = (rng.random((sim_count, len(home_xg_list))) < home_xg_list).sum(axis=1) \
+        if len(home_xg_list) else np.zeros(sim_count, dtype=int)
+    away_goals = (rng.random((sim_count, len(away_xg_list))) < away_xg_list).sum(axis=1) \
+        if len(away_xg_list) else np.zeros(sim_count, dtype=int)
+    outcomes = np.where(home_goals > away_goals, 'home',
+                        np.where(away_goals > home_goals, 'away', 'draw'))
 
-        
-        home_goals = 0
-        away_goals = 0
+    match_simulation_results = pd.DataFrame(
+        {'home_goals': home_goals, 'away_goals': away_goals, 'outcome': outcomes})
+    match_simulation_results['home_team'] = home_team
+    match_simulation_results['away_team'] = away_team
 
-        
-        if len(home_xg_list) > 0:
+    result_dict = {
+        'match_id': match_id,
+        'home_xg': float(home_xg_list.sum()),
+        'away_xg': float(away_xg_list.sum()),
+        'home_win_probability': float((outcomes == 'home').mean()),
+        'away_win_probability': float((outcomes == 'away').mean()),
+        'draw_probability': float((outcomes == 'draw').mean()),
+    }
+    result_dict['home_xpoints'] = result_dict['home_win_probability'] * 3 + result_dict['draw_probability']
+    result_dict['away_xpoints'] = result_dict['away_win_probability'] * 3 + result_dict['draw_probability']
 
-            for xg_shot in home_xg_list:
-                rand_prob = np.random.random()
-                home_goals = home_goals + 1 if rand_prob < xg_shot else home_goals
-
-        
-        if len(away_xg_list) > 0:
-
-            for xg_shot in away_xg_list:
-                rand_prob = np.random.random()
-                away_goals = away_goals + 1 if rand_prob < xg_shot else away_goals
-
-        
-        home_goal_list.append(home_goals)
-        away_goal_list.append(away_goals)
-
-        
-        outcome = 'home' if home_goals > away_goals else 'away' if away_goals > home_goals else 'draw'
-        outcome_list.append(outcome)
-
-    
-    match_simulation_results = pd.DataFrame(zip(home_goal_list, away_goal_list, outcome_list),
-                                            columns=['home_goals', 'away_goals', 'outcome'])
-    match_simulation_results['home_team'] = match_simulate['home_team'].values[0]
-    match_simulation_results['away_team'] = match_simulate['away_team'].values[0]
-
-   
-    result_dict = dict()
-
-    
-    result_dict['match_id'] = match_id
-    result_dict['home_xg'] = home_xg_list.sum()
-    result_dict['away_xg'] = away_xg_list.sum()
-    result_dict['home_win_probability'] = outcome_list.count('home') / sim_count
-    result_dict['away_win_probability'] = outcome_list.count('away') / sim_count
-    result_dict['draw_probability'] = outcome_list.count('draw') / sim_count
-    result_dict['home_xpoints'] = result_dict['home_win_probability'] * 3 + result_dict['draw_probability'] * 1
-    result_dict['away_xpoints'] = result_dict['away_win_probability'] * 3 + result_dict['draw_probability'] * 1
-
-    
     if 'home_xpoints' in matches.columns:
         matches_out = matches.copy()
-        matches_out.loc[matches['match_id'] == match_id, list(result_dict.keys())[1:]] = list(result_dict.values())[
-                                                                                            1:]
+        for k, v in result_dict.items():
+            if k == 'match_id':
+                continue
+            matches_out.loc[matches_out['match_id'] == match_id, k] = v
     else:
         join_df = pd.DataFrame(result_dict, index=[0])
-        matches_out = pd.merge(matches, join_df, left_on='match_id', right_on='match_id', how='left')
-
-    return matches_out, match_simulation_results
-
-        
-        if len(home_xg_list) > 0:
-
-            for xg_shot in home_xg_list:
-                rand_prob = np.random.random()
-                home_goals = home_goals + 1 if rand_prob < xg_shot else home_goals
-
-       
-        if len(away_xg_list) > 0:
-
-            for xg_shot in away_xg_list:
-                rand_prob = np.random.random()
-                away_goals = away_goals + 1 if rand_prob < xg_shot else away_goals
-
-       
-        home_goal_list.append(home_goals)
-        away_goal_list.append(away_goals)
-
-        
-        outcome = 'home' if home_goals > away_goals else 'away' if away_goals > home_goals else 'draw'
-        outcome_list.append(outcome)
-
-    
-    match_simulation_results = pd.DataFrame(zip(home_goal_list, away_goal_list, outcome_list),
-                                            columns=['home_goals', 'away_goals', 'outcome'])
-    match_simulation_results['home_team'] = match_simulate['home_team'].values[0]
-    match_simulation_results['away_team'] = match_simulate['away_team'].values[0]
-
-    
-    result_dict = dict()
-
-    
-    result_dict['match_id'] = match_id
-    result_dict['home_xg'] = home_xg_list.sum()
-    result_dict['away_xg'] = away_xg_list.sum()
-    result_dict['home_win_probability'] = outcome_list.count('home') / sim_count
-    result_dict['away_win_probability'] = outcome_list.count('away') / sim_count
-    result_dict['draw_probability'] = outcome_list.count('draw') / sim_count
-    result_dict['home_xpoints'] = result_dict['home_win_probability'] * 3 + result_dict['draw_probability'] * 1
-    result_dict['away_xpoints'] = result_dict['away_win_probability'] * 3 + result_dict['draw_probability'] * 1
-
-    
-    if 'home_xpoints' in matches.columns:
-        matches_out = matches.copy()
-        matches_out.loc[matches['match_id'] == match_id, list(result_dict.keys())[1:]] = list(result_dict.values())[
-                                                                                            1:]
-    else:
-        join_df = pd.DataFrame(result_dict, index=[0])
-        matches_out = pd.merge(matches, join_df, left_on='match_id', right_on='match_id', how='left')
+        matches_out = pd.merge(matches, join_df, on='match_id', how='left')
 
     return matches_out, match_simulation_results

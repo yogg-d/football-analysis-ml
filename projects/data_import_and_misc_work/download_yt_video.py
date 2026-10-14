@@ -1,7 +1,10 @@
 # %% Imports
 
 import pytube
-from moviepy.editor import VideoFileClip
+try:
+    from moviepy.editor import VideoFileClip  # moviepy < 2
+except ImportError:  # pragma: no cover - moviepy >= 2 moved the API
+    from moviepy import VideoFileClip
 
 # %% Inputs
 

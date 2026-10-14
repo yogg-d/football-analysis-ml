@@ -21,13 +21,14 @@ import pickle
 import bz2
 from PIL import Image
 from joblib import dump, load
+from pathlib import Path
 
 # %% Add custom tools to path
 
 root_folder = os.path.abspath(os.path.dirname((os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(root_folder)
 
-import analysis_tools.wyscout_data_engineering as wde
+from tools import wyscout_data_engineering as wde
 
 # %% User inputs
 
@@ -55,10 +56,10 @@ for _, shot in event_data[event_data['eventName']=='Shot'].iterrows():
     
     # Player, team and competition
     if shot['playerId'] != 0:
-        shots_model_df.loc[i, 'player_name'] = player_data.loc[shot['playerId']]['shortName'].encode('ascii', 'strict').decode('unicode-escape')
+        shots_model_df.loc[i, 'player_name'] = str(player_data.loc[shot['playerId']]['shortName'])
     else:
         shots_model_df.loc[i, 'player_name'] = np.nan
-    shots_model_df.loc[i, 'team_name'] = team_data.loc[shot['teamId']]['name'].encode('ascii', 'strict').decode('unicode-escape')
+    shots_model_df.loc[i, 'team_name'] = str(team_data.loc[shot['teamId']]['name'])
     shots_model_df.loc[i, 'competition_name'] = competition_data.loc[match_data.loc[shot['matchId']]['competitionId']]['name']
     
     # Position and distance info
@@ -94,12 +95,14 @@ for _, shot in event_data[event_data['eventName']=='Shot'].iterrows():
 X = shots_model_df.drop(['player_name', 'team_name', 'competition_name','goal'], axis=1)
 y = shots_model_df['goal']
 
-# Fit
-log_model = LogisticRegression()
+# Fit (NOTE: the committed model file was saved with 6 features incl. 'xG'
+# and is stale/leaky — retrain with this script to regenerate a clean 5-feature model)
+log_model = LogisticRegression(max_iter=1000, random_state=0)
 log_model.fit(X,y)
 
 # Save model
-dump(log_model, '../../model_directory/xg_model/log_regression_xg_model.joblib') 
+Path('../../model/xg_model').mkdir(parents=True, exist_ok=True)
+dump(log_model, '../../model/xg_model/log_regression_xg_model.joblib') 
 
 # Coefficients
 a = log_model.intercept_[0]
@@ -110,6 +113,7 @@ shots_model_df['xG'] = log_model.predict_proba(X)[:,1]
 
 # %% Save xG data
 
+Path('../../data_directory/misc_data').mkdir(parents=True, exist_ok=True)
 with bz2.BZ2File("../../data_directory/misc_data/log_regression_xg_data.pbz2", "wb") as f:
     pickle.dump(shots_model_df, f)
 
@@ -211,7 +215,8 @@ fig.text(0.5, 0.02, "Created by Jake Kolliari (@_JKDS_). Data provided by Wyscou
 # Add twitter logo
 logo_ax = fig.add_axes([0.94, 0.005, 0.04, 0.04])
 logo_ax.axis("off")
-badge = Image.open('..\..\data_directory\misc_data\images\JK Twitter Logo.png')
-logo_ax.imshow(badge)
+badge = None  # optional logo omitted (file not in repo)
+if badge is not None:
+    logo_ax.imshow(badge)
 
 fig.tight_layout(rect=[0.03, 0.04, 0.97, 0.86])

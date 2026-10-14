@@ -39,7 +39,7 @@ get_possession_chains(events_df, chain_check=5, suc_evts_in_chain=3):
 import numpy as np
 import pandas as pd
 from scipy.spatial import ConvexHull
-from scipy.interpolate import interp2d
+from scipy.interpolate import RegularGridInterpolator
 from scipy.spatial import Delaunay
 from shapely.geometry.polygon import Polygon
 
@@ -73,7 +73,7 @@ def pre_assist(events_df):
         loop = True
 
         # Loop through previous events in the same period to find the pre-assist, if there is one
-        while loop:
+        while loop and scan_idx >= 0:
             if events_out.iloc[scan_idx]['period'] != period_number:
                 loop = False
             if events_out.iloc[scan_idx]['teamId'] != assist_team:
@@ -258,8 +258,12 @@ def create_convex_hull(events_df, name='default', min_events=3, include_events='
 
         # Calculate and store convex hull centre, area and perimeter
         hull_df.at[name, 'hull_centre'] = (reduced_hull_data['x_position'].mean(), reduced_hull_data['y_position'].mean())
-        hull_df.at[name, 'hull_area'] = ConvexHull(hull_pts).volume
-        hull_df.at[name, 'hull_perimeter'] = ConvexHull(hull_pts).area
+        try:
+            _hull = ConvexHull(hull_pts)
+        except Exception:
+            return None
+        hull_df.at[name, 'hull_area'] = _hull.volume
+        hull_df.at[name, 'hull_perimeter'] = _hull.area
         hull_df.at[name, 'hull_area_%'] = 100 * hull_df.loc[name, 'hull_area'] / pitch_area
 
     return hull_df
@@ -357,10 +361,10 @@ def passes_into_hull(hull_info, events_df, opp_passes=True, xt_info=False):
 
     hull_df['count_suc_pass_into_hull'] = suc_into_hull_count
     hull_df['count_unsuc_pass_into_hull'] = unsuc_into_hull_count
-    hull_df['pct_tot_pass_into_hull'] = round(100 * (suc_into_hull_count + unsuc_into_hull_count) /
-                                              len(events_to_check), 2)
-    hull_df['hull_pass_prevented_%'] = round(100 * unsuc_into_hull_count /
-                                             (suc_into_hull_count + unsuc_into_hull_count), 2)
+    total_checked = len(events_to_check)
+    total_into = suc_into_hull_count + unsuc_into_hull_count
+    hull_df['pct_tot_pass_into_hull'] = round(100 * total_into / total_checked, 2) if total_checked else 0.0
+    hull_df['hull_pass_prevented_%'] = round(100 * unsuc_into_hull_count / total_into, 2) if total_into else 0.0
     if xt_info:
         hull_df['xt_net_suc_pass_into_hull'] = suc_into_hull_xt_net
         hull_df['xt_gen_suc_pass_into_hull'] = suc_into_hull_xt_gen
@@ -392,11 +396,11 @@ def insert_ball_carries(events_df, min_carry_length=3, max_carry_length=60, min_
     # Initialise output dataframe
     events_out = pd.DataFrame()
 
-    # Carry conditions (convert from metres to opta)
-    min_carry_length = 3.0
-    max_carry_length = 60.0
-    min_carry_duration = 1.0
-    max_carry_duration = 10.0
+    # Carry thresholds honour the function arguments (metres / seconds).
+    min_carry_length = float(min_carry_length)
+    max_carry_length = float(max_carry_length)
+    min_carry_duration = float(min_carry_duration)
+    max_carry_duration = float(max_carry_duration)
 
     for match_id in events_df['match_id'].unique():
 
@@ -541,12 +545,13 @@ def get_xthreat(events_df, interpolate=True, pitch_length=100, pitch_width=100):
         cell_width = pitch_width / init_cell_count_w
         x = np.arange(0.0, pitch_length, cell_length) + 0.5 * cell_length
         y = np.arange(0.0, pitch_width, cell_width) + 0.5 * cell_width
-        interpolator = interp2d(x=x, y=y, z=xt_grid.values, kind='linear', bounds_error=False)
+        interpolator = RegularGridInterpolator((y, x), xt_grid.values, method='linear', bounds_error=False, fill_value=None)
         interp_cell_count_l = int(pitch_length * 10)
         interp_cell_count_w = int(pitch_width * 10)
         xs = np.linspace(0, pitch_length, interp_cell_count_l)
         ys = np.linspace(0, pitch_width, interp_cell_count_w)
-        grid = interpolator(xs, ys)
+        xx, yy = np.meshgrid(xs, ys)
+        grid = interpolator((yy, xx))
     else:
         grid = xt_grid.values
 
@@ -799,9 +804,9 @@ def get_possession_chains(events_df, chain_check=5, suc_evts_in_chain=3):
 
         # Fill in possession ids and possession team
         match_events_df[['possession_id', 'possession_team']] = (match_events_df[['possession_id', 'possession_team']]
-                                                                 .fillna(method='ffill'))
+                                                                 .ffill())
         match_events_df[['possession_id', 'possession_team']] = (match_events_df[['possession_id', 'possession_team']]
-                                                                 .fillna(method='bfill'))
+                                                                 .bfill())
 
         # Rebuild events dataframe
         events_out = pd.concat([events_out, match_events_df])

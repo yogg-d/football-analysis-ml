@@ -123,7 +123,7 @@ def pre_assist(events):
         loop = True
 
         # Loop through previous events in the same possession phase to find the pre-assist, if there is one
-        while loop:
+        while loop and scan_idx >= 0:
             if events_out.loc[scan_idx, 'possession'] != possession_number:
                 loop = False
             if (events_out.loc[scan_idx, 'possession'] == possession_number
@@ -328,7 +328,7 @@ def progressive_action(events, inplay=True, successful_only=True):
     events_out['prog_action'] = np.nan
 
     # Get potential progressive actions and their distance to goal    
-    prog_action = events[events['type_name'].isin(['Pass', 'Carry'])]
+    prog_action = events[events['type_name'].isin(['Pass', 'Carry'])].copy()
     prog_action['delta_goal_dist'] = (np.sqrt((120-prog_action['x'])**2 + (40-prog_action['y'])** 2) -
                        np.sqrt((120 - prog_action['end_x'])**2 + (40-prog_action['end_y'])**2))
     
@@ -494,8 +494,12 @@ def create_convex_hull(events, name='default', include_events='1std', min_events
         # Calculate and store convex hull centre, area and perimeter
         hull_df.at[name, 'hull_centre'] = (reduced_hull_data['x_position'].mean(),
                                            reduced_hull_data['y_position'].mean())
-        hull_df.at[name, 'hull_area'] = ConvexHull(hull_pts).volume
-        hull_df.at[name, 'hull_perimeter'] = ConvexHull(hull_pts).area
+        try:
+            _hull = ConvexHull(hull_pts)
+        except Exception:
+            return None
+        hull_df.at[name, 'hull_area'] = _hull.volume
+        hull_df.at[name, 'hull_perimeter'] = _hull.area
         hull_df.at[name, 'hull_area_%'] = round(100 * hull_df.loc[name, 'hull_area'] / pitch_area, 2)
 
     return hull_df
@@ -596,10 +600,10 @@ def passes_into_hull(hull_info, events, opp_passes=True, obv_info=False):
 
     hull_df['count_suc_pass_into_hull'] = suc_into_hull_count
     hull_df['count_unsuc_pass_into_hull'] = unsuc_into_hull_count
-    hull_df['pct_tot_pass_into_hull'] = round(100 * (suc_into_hull_count + unsuc_into_hull_count) /
-                                              len(events_to_check), 2)
-    hull_df['hull_pass_prevented_%'] = round(100 * unsuc_into_hull_count /
-                                             (suc_into_hull_count + unsuc_into_hull_count), 2)
+    total_checked = len(events_to_check)
+    total_into = suc_into_hull_count + unsuc_into_hull_count
+    hull_df['pct_tot_pass_into_hull'] = round(100 * total_into / total_checked, 2) if total_checked else 0.0
+    hull_df['hull_pass_prevented_%'] = round(100 * unsuc_into_hull_count / total_into, 2) if total_into else 0.0
     if obv_info:
         hull_df['obvfor_suc_pass_into_hull'] = suc_into_hull_obvfor
         hull_df['obvagainst_suc_pass_into_hull'] = suc_into_hull_obvagainst
@@ -681,28 +685,28 @@ def defensive_line_positions(events, team, include_events='1std'):
         # Create list of widths of right defensive actions for match
         right_def_width = [x[1] for x in right_def_actions['location'].values]
 
-    def_line_event_heights.append(def_line_event_height)
-    pressure_heights.append(pressure_height)
-    left_def_widths.append(left_def_width)
-    right_def_widths.append(right_def_width)
+        def_line_event_heights.extend(def_line_event_height)
+        pressure_heights.extend(pressure_height)
+        left_def_widths.extend(left_def_width)
+        right_def_widths.extend(right_def_width)
 
     # Remove (100 - include_percent) or count std of points, starting with furthest from action centroid
     if 'std' in str(include_events):
         num_stds = float(include_events.split('std')[0])
-        sqrt_variance_dh = np.sqrt(sum((def_line_event_heights - np.mean(def_line_event_heights))**2) /
-                                   (len(def_line_event_heights) - 1))
-        def_line_event_heights = np.array(def_line_event_heights)[abs(def_line_event_heights -
-                                                                      np.mean(def_line_event_heights)) <=
-                                                                  sqrt_variance_dh * num_stds]
-        sqrt_variance_p = np.sqrt(sum((pressure_heights - np.mean(pressure_heights))**2) / (len(pressure_heights) - 1))
-        pressure_heights = np.array(pressure_heights)[abs(pressure_heights - np.mean(pressure_heights)) <=
-                                                      sqrt_variance_p * num_stds]
-        sqrt_variance_lw = np.sqrt(sum((left_def_widths - np.mean(left_def_widths))**2) / (len(left_def_widths) - 1))
-        left_def_widths = np.array(left_def_widths)[abs(left_def_widths - np.mean(left_def_widths)) <=
-                                                    sqrt_variance_lw * num_stds]
-        sqrt_variance_rw = np.sqrt(sum((right_def_widths - np.mean(right_def_widths))**2) / (len(right_def_widths) - 1))
-        right_def_widths = np.array(right_def_widths)[abs(right_def_widths - np.mean(right_def_widths)) <=
-                                                      sqrt_variance_rw * num_stds]
+
+        def _filter_std(values):
+            values = np.asarray(values, dtype=float)
+            if len(values) < 2:
+                return values
+            sd = values.std(ddof=1)
+            if sd == 0 or np.isnan(sd):
+                return values
+            return values[np.abs(values - values.mean()) <= sd * num_stds]
+
+        def_line_event_heights = _filter_std(def_line_event_heights)
+        pressure_heights = _filter_std(pressure_heights)
+        left_def_widths = _filter_std(left_def_widths)
+        right_def_widths = _filter_std(right_def_widths)
 
     else:
         def_line_event_heights = np.sort(def_line_event_heights)[0:int((include_events/100) *
@@ -737,9 +741,14 @@ def long_ball_retention(events, player_name, player_team):
         pandas.DataFrame: Dataframe of player long ball receipt information
     """
 
-    # Add pass into box information
+    # Add pass into box information (vectorised; box_entry() works on frames,
+    # so compute the row-wise flag inline here).
     events_out = events.copy()
-    events_out.loc[:, 'into_box'] = events_out.apply(box_entry, inplay=False, axis=1)
+    _is_pass_carry = events_out['type_name'].isin(['Pass', 'Carry'])
+    _start_outside = (events_out['x'] < 102) | (events_out['y'] < 18) | (events_out['y'] > 62)
+    _ends_inside = (events_out['end_x'] >= 102) & (events_out['end_y'] >= 18) & (events_out['end_y'] <= 62)
+    events_out['into_box'] = (_is_pass_carry & _start_outside & _ends_inside).astype(object).where(
+        _is_pass_carry & _start_outside & _ends_inside, other=float('nan'))
 
     # Filter out long balls to player outside the box
     to_player = events_out[events_out['pass_recipient'] == player_name]
@@ -1146,18 +1155,22 @@ def find_offensive_actions(events, in_play=False):
         pandas.DataFrame: dataframe of in-play offensive actions.
     """
 
-    # Define and filter offensive events
-    offensive_action_names = ['Carries', 'Dribble', 'Ball Receipt*', 'Foul Won', 'Pass', 'Shot']
-    offensive_action_df = events[events['type_name'].isin(offensive_action_names)].reset_index(drop=True)
+    # Define and filter offensive events (accept both 'type_name' and 'type' schemas)
+    tcol = 'type_name' if 'type_name' in events.columns else 'type'
+    offensive_action_names = ['Carry', 'Carries', 'Dribble', 'Ball Receipt', 'Ball Receipt*', 'Foul Won', 'Pass', 'Shot']
+    offensive_action_df = events[events[tcol].isin(offensive_action_names)].reset_index(drop=True)
+    tcol_out = tcol  # column holding the event type in the filtered frame
 
-    # Remove defensive foul won
-    offensive_action_df = offensive_action_df.drop(
-        offensive_action_df[(offensive_action_df['type_name'] == 'Foul Won')
-                            & (offensive_action_df['foul_won_defensive'] == True)].index)
+    # Remove defensive foul won (guard: column may not exist in minimal frames)
+    if 'foul_won_defensive' in offensive_action_df.columns:
+        offensive_action_df = offensive_action_df.drop(
+            offensive_action_df[(offensive_action_df[tcol_out] == 'Foul Won')
+                                & (offensive_action_df['foul_won_defensive'] == True)].index)
 
     # Remove set piece information if 'in-play' = True
     if in_play:
-        offensive_action_df = offensive_action_df[offensive_action_df['in_play_event'] == 1]
+        if 'in_play_event' in offensive_action_df.columns:
+            offensive_action_df = offensive_action_df[offensive_action_df['in_play_event'] == 1]
 
     return offensive_action_df
 
@@ -1176,20 +1189,24 @@ def find_defensive_actions(events):
             pandas.DataFrame: dataframe of in-play defensive actions.
         """
 
-    # Define and filter defensive events
+    # Define and filter defensive events (accept both 'type_name' and 'type' schemas)
+    tcol = 'type_name' if 'type_name' in events.columns else 'type'
     defensive_action_names = ['Ball Recovery', 'Block', 'Clearance', 'Shield', 'Interception', 'Pressure', 'Duel',
                               '50/50', 'Foul Won', 'Foul Committed']
-    defensive_action_df = events[events['type_name'].isin(defensive_action_names)].reset_index(drop=True)
+    defensive_action_df = events[events[tcol].isin(defensive_action_names)].reset_index(drop=True)
+    tcol_out = tcol
 
-    # Remove offensive team block
-    defensive_action_df = defensive_action_df.drop(
-        defensive_action_df[(defensive_action_df['type_name'] == 'Block')
-                            & (defensive_action_df['block_offensive'] == True)].index)
+    # Remove offensive team block (guard: column may not exist in minimal frames)
+    if 'block_offensive' in defensive_action_df.columns:
+        defensive_action_df = defensive_action_df.drop(
+            defensive_action_df[(defensive_action_df[tcol_out] == 'Block')
+                                & (defensive_action_df['block_offensive'] == True)].index)
 
-    # Remove defensive foul won
-    defensive_action_df = defensive_action_df.drop(
-        defensive_action_df[(defensive_action_df['type_name'] == 'Foul Won')
-                            & (defensive_action_df['foul_won_defensive'] != True)].index)
+    # Remove defensive foul won (guard: column may not exist in minimal frames)
+    if 'foul_won_defensive' in defensive_action_df.columns:
+        defensive_action_df = defensive_action_df.drop(
+            defensive_action_df[(defensive_action_df[tcol_out] == 'Foul Won')
+                                & (defensive_action_df['foul_won_defensive'] != True)].index)
 
     return defensive_action_df
 
@@ -1213,6 +1230,9 @@ def get_counterpressure_events(events_in, t=5):
 
     # Make copy of events dataframe
     events = events_in.copy()
+    for _col in ('counterpress', 'pass_angle'):
+        if _col not in events.columns:
+            events[_col] = 0
 
     # Get ball losses from inplay events
     all_ball_loss = events[(events['type_name'] == 'Dispossessed') |

@@ -67,15 +67,21 @@ def add_cumulative_mins(events):
         match_events['cumulative_mins'] = match_events['timestamp'].apply(convert_time)
 
         # Add time increment to cumulative minutes based on period of game.
-        for period in np.arange(1, match_events['period'].max() + 1, 1):
-            if period > 1:
-                t_delta = match_events[match_events['period'] == period - 1]['cumulative_mins'].max() - \
-                          match_events[match_events['period'] == period]['cumulative_mins'].min()
-            elif period == 1 or period == 5:
-                t_delta = 0
-            else:
-                t_delta = 0
-            match_events.loc[match_events['period'] == period, 'cumulative_mins'] += t_delta
+        # Periods continue from the previous period's maximum, except
+        # periods 1 and 5 which restart the clock.
+        for period in sorted(match_events['period'].dropna().unique()):
+            period_mask = match_events['period'] == period
+            if period in (1, 5):
+                continue
+            prev_periods = match_events[match_events['period'] < period]
+            if prev_periods.empty or match_events.loc[period_mask].empty:
+                continue
+            prev_in_play = prev_periods[~prev_periods['period'].isin([5])]
+            if prev_in_play.empty:
+                continue
+            t_delta = (prev_in_play['cumulative_mins'].max()
+                       - match_events.loc[period_mask, 'cumulative_mins'].min())
+            match_events.loc[period_mask, 'cumulative_mins'] += t_delta
 
         # Combine individual matches if events for multiple matches have been passed
         events_out = pd.concat([events_out, match_events])
@@ -550,11 +556,11 @@ def create_player_list(lineups, additional_cols=None, pass_extra=None, group_pos
     if additional_cols is None:
         included_cols = lineups.groupby(['player_id', 'position_name', 'position_group', 'position_category',
                                          'team_name', 'competition',
-                                         'season'], axis=0).sum(numeric_only=True)['time_played']
+                                         'season'], ).sum(numeric_only=True)['time_played']
     else:
         included_cols = lineups.groupby(['player_id', 'position_name', 'position_group', 'position_category',
                                          'team_name', 'competition',
-                                         'season'], axis=0).sum(numeric_only=True)[['time_played'] + additional_cols]
+                                         'season'], ).sum(numeric_only=True)[['time_played'] + additional_cols]
 
     playerinfo_df = playerinfo_df.merge(included_cols, left_on=['player_id', 'position_name', 'position_group',
                                                                 'position_category', 'team_name', 'competition',
@@ -631,14 +637,14 @@ def group_player_events(events, player_data, group_type='count', agg_columns=Non
 
     # Perform aggregation based on grouping type input
     if group_type == 'count':
-        grouped_events = events.groupby('player_id', axis=0).count()
+        grouped_events = events.groupby('player_id').count()
         selected_events = grouped_events[agg_columns].copy()
         selected_events.loc[:, primary_event_name] = grouped_events['match_id']
     elif group_type == 'sum':
-        grouped_events = events.groupby('player_id', axis=0).sum(numeric_only=True)
+        grouped_events = events.groupby('player_id').sum(numeric_only=True)
         selected_events = grouped_events[agg_columns].copy()
     elif group_type == 'mean':
-        grouped_events = events.groupby('player_id', axis=0).mean(numeric_only=True)
+        grouped_events = events.groupby('player_id').mean(numeric_only=True)
         selected_events = grouped_events[agg_columns].copy()
     else:
         selected_events = pd.DataFrame()
@@ -669,7 +675,7 @@ def create_team_list(lineups):
 
     teaminfo_df = lineups[['team_name', 'match_id']].drop_duplicates()
 
-    included_cols_max = lineups.groupby(['team_name', 'match_id'], axis=0).max()['time_played']
+    included_cols_max = lineups.groupby(['team_name', 'match_id']).max()['time_played']
 
     teaminfo_df = teaminfo_df.merge(included_cols_max, left_on=['team_name', 'match_id'], right_index=True)
     teaminfo_df['matches_played'] = 1
@@ -707,14 +713,14 @@ def group_team_events(events, team_info, group_type='count', agg_columns=None, p
 
     # Perform aggregation based on grouping type input
     if group_type == 'count':
-        grouped_events = events.groupby('team_name', axis=0).count()
+        grouped_events = events.groupby('team_name').count()
         selected_events = grouped_events[agg_columns].copy()
         selected_events.loc[:, primary_event_name] = grouped_events['match_id']
     elif group_type == 'sum':
-        grouped_events = events.groupby('team_name', axis=0).sum(numeric_only=True)
+        grouped_events = events.groupby('team_name').sum(numeric_only=True)
         selected_events = grouped_events[agg_columns].copy()
     elif group_type == 'mean':
-        grouped_events = events.groupby('team_name', axis=0).mean(numeric_only=True)
+        grouped_events = events.groupby('team_name').mean(numeric_only=True)
         selected_events = grouped_events[agg_columns].copy()
     else:
         selected_events = pd.DataFrame()

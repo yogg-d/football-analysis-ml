@@ -19,13 +19,14 @@ import tensorflow as tf
 from mplsoccer.pitch import VerticalPitch
 import pickle
 import bz2
+from pathlib import Path
 
 # %% Add custom tools to path
 
 root_folder = os.path.abspath(os.path.dirname((os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(root_folder)
 
-import analysis_tools.wyscout_data_engineering as wde
+from tools import wyscout_data_engineering as wde
 
 # %% User inputs
 
@@ -53,10 +54,10 @@ for _, shot in event_data[event_data['eventName']=='Shot'].iterrows():
     
     # Player, team and competition
     if shot['playerId'] != 0:
-        shots_model_df.loc[i, 'player_name'] = player_data.loc[shot['playerId']]['shortName'].encode('ascii', 'strict').decode('unicode-escape')
+        shots_model_df.loc[i, 'player_name'] = str(player_data.loc[shot['playerId']]['shortName'])
     else:
         shots_model_df.loc[i, 'player_name'] = np.nan
-    shots_model_df.loc[i, 'team_name'] = team_data.loc[shot['teamId']]['name'].encode('ascii', 'strict').decode('unicode-escape')
+    shots_model_df.loc[i, 'team_name'] = str(team_data.loc[shot['teamId']]['name'])
     shots_model_df.loc[i, 'competition_name'] = competition_data.loc[match_data.loc[shot['matchId']]['competitionId']]['name']
     
     # Position and distance info
@@ -115,6 +116,7 @@ shots_model_df['xG'] = neural_net.predict([X])[:,1]
 
 # %% Save xG data
 
+Path('../../data_directory/misc_data').mkdir(parents=True, exist_ok=True)
 with bz2.BZ2File("../../data_directory/misc_data/neural_net_xg_data.pbz2", "wb") as f:
     pickle.dump(shots_model_df, f)
 

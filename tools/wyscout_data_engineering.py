@@ -21,8 +21,8 @@ def format_wyscout_data(tournament='England', data_folder="../../data_directory/
         data_folder (str, optional): Location of data, relative to script in which function is called..
 
     Returns:
-        pandas.DataFrame: wyscout-style event dataframe, containing all events from selected competition.
         pandas.DataFrame: wyscout-style matches dataframe, containing all match information from selected competition.
+        pandas.DataFrame: wyscout-style event dataframe, containing all events from selected competition.
         defaultdict: wyscout-style event dictionary, containing events per match.
         pandas.DataFrame: wyscout-style player dataframe, containing player info for all players in av. Wyscout data.
         pandas.DataFrame: wyscout-style competition dataframe, containing comp info for all comps in av. Wyscout data.
@@ -46,8 +46,8 @@ def format_wyscout_data(tournament='England', data_folder="../../data_directory/
             events = events_temp
             matches = matches_temp
         else:
-            events = events.append(events_temp)
-            matches = matches.append(matches_temp)
+            events = pd.concat([events, events_temp], ignore_index=True)
+            matches = pd.concat([matches, matches_temp], ignore_index=True)
 
     # Produce a dictionary of lists: top level dictionary of matches with sub-list of events
     match_id2events = defaultdict(list)
