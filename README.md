@@ -7,10 +7,9 @@ This repository assumes that the [StatsBomb open-data](https://github.com/statsb
 
 # Versioning
 
-
+1.
 The code was updated on 2026-09-13 to use the latest available data and mplsoccer 1.1.6.
-
-## 2026-09-27 update
+2.
 The code was updated again on 2026-10-14 to use the latest available data, to parse the StatsBomb data with
 duckstatsbomb, and to run on current versions of the libraries. The thesis document has not been updated.
 
