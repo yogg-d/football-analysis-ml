@@ -4,18 +4,14 @@ A repository for analysis on Expected Goals using Hudl StatsBomb and Wyscout dat
 # StatsBomb data
 This repository assumes that the [StatsBomb open-data](https://github.com/statsbomb/open-data) has already been cloned to a directory named
 `statsbomb-open-data` alongside this repository (the notebook `notebooks/create-data/00_statsbomb_data_to_parquet.ipynb` has a path to change if it is elsewhere).
-The JSON files are parsed with [duckstatsbomb](https://duckstatsbomb.readthedocs.io), which uses DuckDB to parse the whole
-open-data set in seconds, so to update the data you `git pull` the open-data repository and re-run the notebook.
 
 # Versioning
 
-The original thesis was run from a particular [version](https://github.com/statsbomb/open-data/commit/87a5f02d7f526c4fe92909790999da5f26166328) of the data and mplsoccer (my football plotting library).
-The original code is here: https://github.com/andrewRowlinson/expected-goals-thesis/tree/c6945f2919666933bd5e35692f838f85a82073e0
 
-The code was updated on 2021-09-13 to use the latest available data and mplsoccer 1.1.6.
+The code was updated on 2026-09-13 to use the latest available data and mplsoccer 1.1.6.
 
 ## 2026-09-27 update
-The code was updated again on 2026-09-27 to use the latest available data, to parse the StatsBomb data with
+The code was updated again on 2026-10-14 to use the latest available data, to parse the StatsBomb data with
 duckstatsbomb, and to run on current versions of the libraries. The thesis document has not been updated.
 
 Data used for this update:
